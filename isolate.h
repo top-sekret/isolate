@@ -17,6 +17,9 @@
 /* isolate.c */
 
 void die(char *msg, ...) NONRET;
+void quick_die(void) NONRET;
+int box_exists(int boxid);
+int box_delete(int boxid);
 void NONRET __attribute__((format(printf,1,2))) err(char *msg, ...);
 void __attribute__((format(printf,1,2))) msg(char *msg, ...);
 
@@ -28,6 +31,7 @@ extern int cg_enable;
 extern int cg_memory_limit;
 
 extern int box_id;
+extern int box_id_auto;
 extern uid_t box_uid, orig_uid;
 extern gid_t box_gid, orig_gid;
 
@@ -38,7 +42,7 @@ char *xstrdup(char *str);
 char * __attribute__((format(printf,1,2))) xsprintf(const char *fmt, ...);
 
 int dir_exists(char *path);
-void rmtree(char *path);
+int rmtree(char *path);
 void make_dir(char *path);
 void make_dir_for(char *path);
 void chowntree(char *path, uid_t uid, gid_t gid, bool keep_special_files);
@@ -106,3 +110,8 @@ cf_current_box(void)
 {
   return cf_per_box(box_id);
 }
+
+/* auto_boxid.c */
+
+void auto_boxid_release(int box_id);
+int auto_boxid_get(void);

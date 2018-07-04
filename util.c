@@ -10,6 +10,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
+#include <ftw.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -190,26 +191,26 @@ walktree(struct walk_context *ctx, const char *path, void (*callback)(struct wal
   ctx->callback(ctx);
 }
 
-static void
-rmtree_helper(struct walk_context *ctx)
+static int
+rmtree_helper(const char *fpath, const struct stat *sb, int typeflag UNUSED, struct FTW *ftwbuf UNUSED)
 {
-  if (ctx->is_dir)
+  if (S_ISDIR(sb->st_mode))
     {
-      if (unlinkat(ctx->dir_fd, ctx->name, AT_REMOVEDIR) < 0)
-	die("Cannot rmdir %s: %m", ctx->name);
+      if (rmdir(fpath) < 0)
+	die("Cannot rmdir %s: %m", fpath);
     }
   else
     {
-      if (unlinkat(ctx->dir_fd, ctx->name, 0) < 0)
-	die("Cannot unlink %s: %m", ctx->name);
+      if (unlink(fpath) < 0)
+	die("Cannot unlink %s: %m", fpath);
     }
+  return 0;
 }
 
-void
+int
 rmtree(char *path)
 {
-  struct walk_context ctx = { };
-  walktree(&ctx, path, rmtree_helper);
+  return nftw(path, rmtree_helper, 32, FTW_MOUNT | FTW_PHYS | FTW_DEPTH);
 }
 
 static void
@@ -321,4 +322,5 @@ meta_printf(const char *fmt, ...)
   va_start(args, fmt);
   vfprintf(metafile, fmt, args);
   va_end(args);
+  fflush(metafile);
 }

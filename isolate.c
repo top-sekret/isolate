@@ -29,6 +29,8 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/file.h>
+#include <bits/siginfo.h>
 #include <linux/perf_event.h>
 #include <sys/time.h>
 #include <asm/unistd.h>
@@ -103,6 +105,7 @@ int cg_enable;
 int cg_memory_limit;
 
 int box_id;
+int box_id_auto;
 static char box_dir[1024];
 static pid_t box_pid;
 static pid_t proxy_pid;
@@ -379,6 +382,25 @@ die(char *msg, ...)
   meta_printf("status:XX\nmessage:%s\n", buf);
   fputs(buf, stderr);
   fputc('\n', stderr);
+  box_exit(2);
+}
+
+/* Die in silence */
+void NONRET
+quick_die()
+{
+  // If the child processes are still running, show no mercy.
+  if (box_pid > 0)
+  {
+    kill(-box_pid, SIGKILL);
+    kill(box_pid, SIGKILL);
+  }
+  if (proxy_pid > 0)
+  {
+    kill(-proxy_pid, SIGKILL);
+    kill(proxy_pid, SIGKILL);
+  }
+
   box_exit(2);
 }
 
@@ -1001,6 +1023,20 @@ self_name(void)
   return cg_enable ? "isolate --cg" : "isolate";
 }
 
+int box_exists(int boxid)
+{
+  char path[1024];
+  sprintf(path, "%s/%d", cf_box_root, boxid);
+  return dir_exists(path);
+}
+
+int box_delete(int boxid)
+{
+  char path[1024];
+  sprintf(path, "%s/%d", cf_box_root, boxid);
+  return rmtree(path);
+}
+
 static void
 get_credentials(void)
 {
@@ -1064,6 +1100,12 @@ init(void)
 }
 
 static void
+init_wrapper(char** argv)
+{
+  init();
+}
+
+static void
 cleanup(void)
 {
   if (!lock_box(false))
@@ -1074,6 +1116,18 @@ cleanup(void)
       do_cleanup();
       lock_remove();
     }
+
+  auto_boxid_release(box_id);
+
+  msg("Deleting sandbox directory\n");
+  rmtree(box_dir);
+  cg_remove();
+}
+
+static void
+cleanup_wrapper(char** argv)
+{
+  cleanup();
 }
 
 static void
@@ -1169,6 +1223,62 @@ run(char **argv)
 }
 
 static void
+subprocess(char** argv, int block_stdout, int block_stderr, int die_on_nonzero_code, void (*fn)(char**))
+{
+  int stdout_pipes[2];
+  int stderr_pipes[2];
+  if (block_stdout)
+    if (pipe(stdout_pipes)) die("pipe: %m");
+  if (block_stderr)
+    if (pipe(stderr_pipes)) die("pipe: %m");
+
+  int pid = fork();
+  if (pid == 0)
+  {
+    if (block_stdout)
+    {
+      close(stdout_pipes[0]);
+      close(STDOUT_FILENO);
+      dup2(stdout_pipes[1], STDOUT_FILENO);
+    }
+
+    if (block_stderr)
+    {
+      close(stderr_pipes[0]);
+      close(STDERR_FILENO);
+      dup2(stderr_pipes[1], STDERR_FILENO);
+    }
+
+    fn(argv);
+    exit(0);
+  }
+
+  if (block_stdout) close(stdout_pipes[1]);
+  if (block_stderr) close(stderr_pipes[1]);
+
+  siginfo_t siginfo;
+  if (waitid(P_PID, pid, &siginfo, WEXITED)) die("waitid: %m");
+
+  if (siginfo.si_code != CLD_EXITED)
+    quick_die();
+
+  if (siginfo.si_status != 0 && die_on_nonzero_code)
+    quick_die();
+
+  if (block_stdout) close(stdout_pipes[0]);
+  if (block_stderr) close(stderr_pipes[0]);
+}
+
+static void
+onetime(char **argv)
+{
+  subprocess(argv, 1, 1, 1, init_wrapper);
+  subprocess(argv, 0, 1, 0, run);
+  subprocess(argv, 1, 1, 1, cleanup_wrapper);
+  exit(0);
+}
+
+static void
 show_version(void)
 {
   printf("The process isolator " VERSION "\n");
@@ -1194,7 +1304,8 @@ Usage: isolate [<options>] <command>\n\
 Options:\n\
     --as-uid=<uid>\tPerform action on behalf of a given user (requires root)\n\
     --as-gid=<gid>\tPerform action on behalf of a given group (requires root)\n\
--b, --box-id=<id>\tWhen multiple sandboxes are used in parallel, each must get a unique ID\n\
+-b, --box-id=<id>\tWhen multiple sandboxes are used in parallel, each must get a unique ID.\n\
+\t\t\tUse special value \"auto\" to auto-assign the ID.\n\
     --cg\t\tEnable use of control groups\n\
     --cg-mem=<size>\tLimit memory usage of the control group to <size> KB\n\
 -c, --chdir=<dir>\tChange directory to <dir> before executing the program\n\
@@ -1244,6 +1355,7 @@ Commands:\n\
     --run -- <cmd> ...\tRun given command within sandbox\n\
     --cleanup\t\tClean up sandbox\n\
     --print-cg-root\tPrint the root of cgroup hierarchy\n\
+    --onetime\t\tRun --init, --run and --cleanup at once\n\
     --version\t\tDisplay program version and configuration\n\
 ");
   exit(2);
@@ -1254,6 +1366,7 @@ enum opt_code {
   OPT_RUN,
   OPT_CLEANUP,
   OPT_VERSION,
+  OPT_ONETIME,
   OPT_CG,
   OPT_CG_MEM,
   OPT_SHARE_NET,
@@ -1291,6 +1404,7 @@ static const struct option long_opts[] = {
   { "init",		0, NULL, OPT_INIT },
   { "mem",		1, NULL, 'm' },
   { "meta",		1, NULL, 'M' },
+  { "onetime", 0, NULL, OPT_ONETIME},
   { "processes",	2, NULL, 'p' },
   { "quota",		1, NULL, 'q' },
   { "run",		0, NULL, OPT_RUN },
@@ -1343,7 +1457,13 @@ main(int argc, char **argv)
     switch (c)
       {
       case 'b':
-	box_id = opt_uint(optarg);
+  if (strcmp(optarg, "auto") == 0)
+	  box_id_auto = 1;
+  else
+  {
+    box_id = opt_uint(optarg);
+    box_id_auto = 0;
+  }
 	break;
       case 'c':
 	set_cwd = optarg;
@@ -1429,6 +1549,7 @@ main(int argc, char **argv)
       case OPT_INIT:
       case OPT_RUN:
       case OPT_CLEANUP:
+      case OPT_ONETIME:
       case OPT_VERSION:
       case OPT_PRINT_CG_ROOT:
 	if (!mode || (int) mode == c)
@@ -1483,14 +1604,25 @@ main(int argc, char **argv)
   if (mode == OPT_PRINT_CG_ROOT)
     cg_enable = 1;
 
+  if (box_id_auto && mode != OPT_ONETIME)
+    usage("auto-assigning box id is allowed only in --onetime mode\n");
+
   if (require_cg && !cg_enable)
     usage("Options related to control groups require --cg to be set.\n");
 
   get_credentials();
   umask(022);
   cf_parse();
+  if (box_id_auto)
+  {
+    if (mode != OPT_INIT && mode != OPT_ONETIME)
+      die("-bauto can only be used with --init and --onetime modes");
+    else
+      box_id = auto_boxid_get();
+  }
   box_init();
   cg_init();
+
 
   switch (mode)
     {
@@ -1511,6 +1643,11 @@ main(int argc, char **argv)
       break;
     case OPT_PRINT_CG_ROOT:
       printf("%s\n", cf_cg_root);
+      break;
+    case OPT_ONETIME:
+      if (optind >= argc)
+  usage("--onetime mode requires a command to run\n");
+      onetime(argv+optind);
       break;
     default:
       die("Internal error: mode mismatch");
