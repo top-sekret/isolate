@@ -87,10 +87,10 @@ rmtree_helper(const char *fpath, const struct stat *sb, int typeflag UNUSED, str
   return 0;
 }
 
-void
+int
 rmtree(char *path)
 {
-  nftw(path, rmtree_helper, 32, FTW_MOUNT | FTW_PHYS | FTW_DEPTH);
+  return nftw(path, rmtree_helper, 32, FTW_MOUNT | FTW_PHYS | FTW_DEPTH);
 }
 
 static uid_t chown_uid;
@@ -179,4 +179,5 @@ meta_printf(const char *fmt, ...)
   va_start(args, fmt);
   vfprintf(metafile, fmt, args);
   va_end(args);
+  fflush(metafile);
 }
