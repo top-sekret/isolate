@@ -24,6 +24,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <linux/perf_event.h>
+#include <sys/time.h>
+#include <asm/unistd.h>
 
 /* May not be defined in older glibc headers */
 #ifndef MS_PRIVATE
@@ -66,6 +69,8 @@
 static int timeout;			/* milliseconds */
 static int wall_timeout;
 static int extra_timeout;
+static long long instr_limit;
+static long block_time_limit;
 int pass_environ;
 int verbose;
 static int silent;
@@ -110,8 +115,17 @@ static int read_errors_from_fd;
 
 static int status_pipes[2];
 
+static int ready_pipes[2];
+
+int perf_fd;
+uint64_t perf_counter;
+
+struct timeval last_instr_time;
+unsigned long long last_instr_count;
+
 static int get_wall_time_ms(void);
 static int get_run_time_ms(struct rusage *rus);
+static uint64_t get_perf_counter(void);
 
 /*** Messages and exits ***/
 
@@ -120,9 +134,11 @@ final_stats(struct rusage *rus)
 {
   total_ms = get_run_time_ms(rus);
   wall_ms = get_wall_time_ms();
+  perf_counter = get_perf_counter();
 
   meta_printf("time:%d.%03d\n", total_ms/1000, total_ms%1000);
   meta_printf("time-wall:%d.%03d\n", wall_ms/1000, wall_ms%1000);
+  meta_printf("instructions:%ld\n", perf_counter);
   meta_printf("max-rss:%ld\n", rus->ru_maxrss);
   meta_printf("csw-voluntary:%ld\n", rus->ru_nvcsw);
   meta_printf("csw-forced:%ld\n", rus->ru_nivcsw);
@@ -410,6 +426,18 @@ get_run_time_ms(struct rusage *rus)
   return (utime + stime) * 1000 / ticks_per_sec;
 }
 
+static uint64_t get_perf_counter(void)
+{
+  uint64_t count;
+  read(perf_fd, &count, sizeof(uint64_t));
+  return count;
+}
+
+static long miliseconds(struct timeval *t)
+{
+  return t->tv_sec*1000 + t->tv_usec/1000;
+}
+
 static void
 check_timeout(void)
 {
@@ -429,6 +457,48 @@ check_timeout(void)
       if (ms > timeout && ms > extra_timeout)
 	err("TO: Time limit exceeded");
     }
+  if (instr_limit)
+  {
+    __uint64_t instr = get_perf_counter();
+    if (verbose > 1)
+      fprintf(stderr, "[instr check: %llu]\n", instr);
+    if (instr > instr_limit)
+      err("TO: Time limit exceeded (instruction count)");
+  }
+  if (block_time_limit)
+  {
+    __uint64_t instr = get_perf_counter();
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    if (instr > last_instr_count)
+      last_instr_time = now;
+    last_instr_count = instr;
+    long delta;
+    delta = miliseconds(&now) - miliseconds(&last_instr_time);
+    if (verbose > 1)
+      fprintf(stderr, "[block time check: delta %ld]\n", delta);
+    if (delta > block_time_limit)
+      err("TO: Time limit exceeded (block time)");
+  }
+}
+
+static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags)
+{
+  return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
+}
+
+static void perf_init(void)
+{
+  struct perf_event_attr pe;
+  memset(&pe, 0, sizeof(struct perf_event_attr));
+  pe.type = PERF_TYPE_HARDWARE;
+  pe.size = sizeof(struct perf_event_attr);
+  pe.config = PERF_COUNT_HW_INSTRUCTIONS;
+  pe.disabled = 1;
+  pe.exclude_kernel = 1;
+  pe.exclude_hv = 1;
+  perf_fd = perf_event_open(&pe, box_pid, -1, -1, 0);
+  if (perf_fd == -1) die("perf_event_open: %m");
 }
 
 static void
@@ -438,12 +508,18 @@ box_keeper(void)
   close(error_pipes[1]);
   close(status_pipes[1]);
 
+  close(ready_pipes[0]);
+
+  perf_init();
+  ioctl(perf_fd, PERF_EVENT_IOC_RESET, 0);
+  ioctl(perf_fd, PERF_EVENT_IOC_ENABLE, 0);
+
   gettimeofday(&start_time, NULL);
   ticks_per_sec = sysconf(_SC_CLK_TCK);
   if (ticks_per_sec <= 0)
     die("Invalid ticks_per_sec!");
 
-  if (timeout || wall_timeout)
+  if (timeout || wall_timeout || instr_limit || block_time_limit)
     {
       struct sigaction sa;
       bzero(&sa, sizeof(sa));
@@ -455,6 +531,11 @@ box_keeper(void)
       };
       setitimer(ITIMER_REAL, &timer, NULL);
     }
+
+  gettimeofday(&last_instr_time, NULL);
+  last_instr_count = 0;
+
+  close(ready_pipes[1]);
 
   for(;;)
     {
@@ -496,11 +577,14 @@ box_keeper(void)
       if (n != sizeof(stat))
 	die("Did not receive exit status from proxy");
 
+      ioctl(perf_fd, PERF_EVENT_IOC_DISABLE, 0);
       final_stats(&rus);
       if (timeout && total_ms > timeout)
 	err("TO: Time limit exceeded");
       if (wall_timeout && wall_ms > wall_timeout)
 	err("TO: Time limit exceeded (wall clock)");
+      if (instr_limit && perf_counter > instr_limit)
+        err("TO: Time limit exceeded (instruction count)");
 
       if (WIFEXITED(stat))
 	{
@@ -510,9 +594,10 @@ box_keeper(void)
 	  flush_line();
 	  if (!silent)
 	    {
-	      fprintf(stderr, "OK (%d.%03d sec real, %d.%03d sec wall)\n",
+	      fprintf(stderr, "OK (%d.%03d sec real, %d.%03d sec wall, %lu instructions)\n",
 		total_ms/1000, total_ms%1000,
-		wall_ms/1000, wall_ms%1000);
+		wall_ms/1000, wall_ms%1000,
+                      perf_counter);
 	    }
 	  box_exit(0);
 	}
@@ -631,6 +716,8 @@ setup_rlimits(void)
 static int
 box_inside(char **args)
 {
+  close(ready_pipes[1]);
+
   cg_enter();
   setup_root();
   setup_rlimits();
@@ -640,6 +727,9 @@ box_inside(char **args)
 
   if (set_cwd && chdir(set_cwd))
     die("chdir: %m");
+
+  char c; read(ready_pipes[0], &c, 1);
+  close(ready_pipes[0]);
 
   execve(args[0], args, env);
   die("execve(\"%s\"): %m", args[0]);
@@ -678,6 +768,9 @@ box_proxy(void *arg)
       box_inside(args);
       _exit(42);	// We should never get here
     }
+
+  close(ready_pipes[1]);
+  close(ready_pipes[0]);
 
   setup_orig_credentials();
   if (write(status_pipes[1], &inside_pid, sizeof(inside_pid)) != sizeof(inside_pid))
@@ -808,6 +901,9 @@ run(char **argv)
   chowntree("box", box_uid, box_gid);
   cleanup_ownership = 1;
 
+  if (pipe(ready_pipes) < 0)
+    die("ready_pipes: %m");
+
   setup_pipe(error_pipes, 1);
   setup_pipe(status_pipes, 0);
   setup_signals();
@@ -891,6 +987,8 @@ Options:\n\
 -o, --stdout=<file>\tRedirect stdout to <file>\n\
 -p, --processes[=<max>]\tEnable multiple processes (at most <max> of them); needs --cg\n\
 -t, --time=<time>\tSet run time limit (seconds, fractions allowed)\n\
+    --instr=<count>\tSet instruction count limit\n\
+    --block=<time>\tSet block time limit (miliseconds)\n\
 -v, --verbose\t\tBe verbose (use multiple times for even more verbosity)\n\
 -w, --wall-time=<time>\tSet wall clock time limit (seconds, fractions allowed)\n\
 \n\
@@ -915,6 +1013,8 @@ enum opt_code {
   OPT_SHARE_NET,
   OPT_INHERIT_FDS,
   OPT_STDERR_TO_STDOUT,
+  OPT_INSTR,
+  OPT_BLOCK,
 };
 
 static const char short_opts[] = "b:c:d:DeE:f:i:k:m:M:o:p::q:r:st:vw:x:";
@@ -951,6 +1051,8 @@ static const struct option long_opts[] = {
   { "verbose",		0, NULL, 'v' },
   { "version",		0, NULL, OPT_VERSION },
   { "wall-time",	1, NULL, 'w' },
+  { "instr",		1, NULL, OPT_INSTR},
+  { "block",		1, NULL, OPT_BLOCK},
   { NULL,		0, NULL, 0 }
 };
 
@@ -1040,6 +1142,12 @@ main(int argc, char **argv)
       case 'x':
 	extra_timeout = 1000*atof(optarg);
 	break;
+      case OPT_INSTR:
+  	instr_limit = atoll(optarg);
+  	break;
+      case OPT_BLOCK:
+        block_time_limit = atoi(optarg);
+        break;
       case OPT_INIT:
       case OPT_RUN:
       case OPT_CLEANUP:
@@ -1120,3 +1228,4 @@ main(int argc, char **argv)
     }
   exit(0);
 }
+
