@@ -6,7 +6,7 @@ all: isolate isolate.1 isolate.1.html isolate-check-environment
 
 CC=gcc
 CFLAGS=-std=gnu99 -Wall -Wextra -Wno-parentheses -Wno-unused-result -Wno-missing-field-initializers -Wstrict-prototypes -Wmissing-prototypes -D_GNU_SOURCE
-LIBS=-lcap
+LIBS=-lcap -lseccomp
 
 VERSION=1.5
 YEAR=2018
@@ -24,7 +24,7 @@ MANDIR = $(DATADIR)/man
 MAN1DIR = $(MANDIR)/man1
 BOXDIR = $(VARPREFIX)/lib/isolate
 
-isolate: auto_boxid.o isolate.o util.o rules.o cg.o config.o
+isolate: seccomp/seccomp.o auto_boxid.o isolate.o util.o rules.o cg.o config.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.c isolate.h config.h

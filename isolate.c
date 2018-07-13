@@ -89,6 +89,8 @@ static int share_net;
 static int inherit_fds;
 static int default_dirs = 1;
 
+int seccomp_enable;
+
 int cg_enable;
 int cg_memory_limit;
 int cg_timing = 1;
@@ -750,6 +752,9 @@ box_inside(char **args)
   if (set_cwd && chdir(set_cwd))
     die("chdir: %m");
 
+  if (seccomp_enable)
+  setup_seccomp(get_arch(args[0]));
+
   char c; read(ready_pipes[0], &c, 1);
   close(ready_pipes[0]);
 
@@ -769,6 +774,8 @@ setup_orig_credentials(void)
   if (setresuid(orig_uid, orig_uid, orig_uid) < 0)
     die("setresuid: %m");
 }
+
+
 
 static int
 box_proxy(void *arg)
@@ -880,11 +887,11 @@ cleanup(void)
       return;
     }
 
-  auto_boxid_release(box_id);
-
   msg("Deleting sandbox directory\n");
   rmtree(box_dir);
   cg_remove();
+
+  auto_boxid_release(box_id);
 }
 
 static void
@@ -1060,6 +1067,7 @@ Usage: isolate [<options>] <command>\n\
 Options:\n\
 -b, --box-id=<id>\tWhen multiple sandboxes are used in parallel, each must get a unique ID.\n\
 \t\t\tUse special value \"auto\" to auto-assign the ID.\n\
+    --seccomp\t\tEnable seccomp mode\n\
     --cg\t\tEnable use of control groups\n\
     --cg-mem=<size>\tLimit memory usage of the control group to <size> KB\n\
     --cg-timing\t\tTime limits affects total run time of the control group\n\
@@ -1124,6 +1132,7 @@ enum opt_code {
   OPT_STDERR_TO_STDOUT,
   OPT_INSTR,
   OPT_BLOCK,
+  OPT_SECCOMP,
 };
 
 static const char short_opts[] = "b:c:d:DeE:f:i:k:m:M:o:p::q:r:st:vw:x:";
@@ -1150,6 +1159,7 @@ static const struct option long_opts[] = {
   { "processes",	2, NULL, 'p' },
   { "quota",		1, NULL, 'q' },
   { "run",		0, NULL, OPT_RUN },
+  { "seccomp",	        0, NULL, OPT_SECCOMP },
   { "share-net",	0, NULL, OPT_SHARE_NET },
   { "silent",		0, NULL, 's' },
   { "stack",		1, NULL, 'k' },
@@ -1261,6 +1271,9 @@ main(int argc, char **argv)
       case OPT_INSTR:
   	instr_limit = atoll(optarg);
   	break;
+      case OPT_SECCOMP:
+        seccomp_enable = 1;
+        break;
       case OPT_BLOCK:
         block_time_limit = atoi(optarg);
         break;
@@ -1361,4 +1374,3 @@ main(int argc, char **argv)
     }
   exit(0);
 }
-
