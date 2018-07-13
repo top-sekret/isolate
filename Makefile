@@ -6,7 +6,7 @@ all: isolate isolate.1 isolate.1.html isolate-check-environment isolate-cg-keepe
 
 CC=gcc
 CFLAGS=-std=gnu99 -Wall -Wextra -Wno-parentheses -Wno-unused-result -Wno-missing-field-initializers -Wstrict-prototypes -Wmissing-prototypes -D_GNU_SOURCE
-LIBS=-lcap
+LIBS=-lcap -lseccomp
 
 VERSION=2.0
 YEAR=2024
@@ -27,7 +27,7 @@ BOXDIR = $(VARPREFIX)/lib/isolate
 SYSTEMD_CFLAGS := $(shell pkg-config libsystemd --cflags)
 SYSTEMD_LIBS := $(shell pkg-config libsystemd --libs)
 
-isolate: auto_boxid.o isolate.o util.o rules.o cg.o config.o
+isolate: seccomp/seccomp.o auto_boxid.o isolate.o util.o rules.o cg.o config.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 isolate-cg-keeper: isolate-cg-keeper.o config.o util.o

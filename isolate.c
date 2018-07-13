@@ -101,6 +101,8 @@ static bool wait_if_busy;
 static int as_uid = -1;
 static int as_gid = -1;
 
+int seccomp_enable;
+
 int cg_enable;
 int cg_memory_limit;
 
@@ -943,6 +945,9 @@ box_inside(char **args)
   if (set_cwd && chdir(set_cwd))
     die("chdir: %m");
 
+  if (seccomp_enable)
+  setup_seccomp(get_arch(args[0]));
+
   char c; read(ready_pipes[0], &c, 1);
   close(ready_pipes[0]);
 
@@ -963,6 +968,8 @@ setup_orig_credentials(void)
   if (setresuid(orig_uid, orig_uid, orig_uid) < 0)
     die("setresuid: %m");
 }
+
+
 
 static int
 box_proxy(void *arg)
@@ -1117,11 +1124,11 @@ cleanup(void)
       lock_remove();
     }
 
-  auto_boxid_release(box_id);
-
   msg("Deleting sandbox directory\n");
   rmtree(box_dir);
   cg_remove();
+
+  auto_boxid_release(box_id);
 }
 
 static void
@@ -1306,6 +1313,7 @@ Options:\n\
     --as-gid=<gid>\tPerform action on behalf of a given group (requires root)\n\
 -b, --box-id=<id>\tWhen multiple sandboxes are used in parallel, each must get a unique ID.\n\
 \t\t\tUse special value \"auto\" to auto-assign the ID.\n\
+    --seccomp\t\tEnable seccomp mode\n\
     --cg\t\tEnable use of control groups\n\
     --cg-mem=<size>\tLimit memory usage of the control group to <size> KB\n\
 -c, --chdir=<dir>\tChange directory to <dir> before executing the program\n\
@@ -1381,6 +1389,7 @@ enum opt_code {
   OPT_AS_UID,
   OPT_AS_GID,
   OPT_PRINT_CG_ROOT,
+  OPT_SECCOMP,
 };
 
 static const char short_opts[] = "b:c:d:DeE:f:i:k:m:M:n:o:p::q:r:st:vw:x:";
@@ -1408,6 +1417,7 @@ static const struct option long_opts[] = {
   { "processes",	2, NULL, 'p' },
   { "quota",		1, NULL, 'q' },
   { "run",		0, NULL, OPT_RUN },
+  { "seccomp",	        0, NULL, OPT_SECCOMP },
   { "share-net",	0, NULL, OPT_SHARE_NET },
   { "silent",		0, NULL, 's' },
   { "stack",		1, NULL, 'k' },
@@ -1543,6 +1553,9 @@ main(int argc, char **argv)
       case OPT_INSTR:
   	instr_limit = atoll(optarg);
   	break;
+      case OPT_SECCOMP:
+        seccomp_enable = 1;
+        break;
       case OPT_BLOCK:
         block_time_limit = atoi(optarg);
         break;
@@ -1654,4 +1667,3 @@ main(int argc, char **argv)
     }
   exit(0);
 }
-

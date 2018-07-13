@@ -115,3 +115,8 @@ cf_current_box(void)
 
 void auto_boxid_release(int box_id);
 int auto_boxid_get(void);
+
+/* seccomp.c */
+
+void setup_seccomp(uint32_t arch_token);
+uint32_t get_arch(char* path);
