@@ -135,6 +135,15 @@ static uint64_t get_perf_counter(void);
 /*** Messages and exits ***/
 
 static void
+hostname_info()
+{
+    char* hostname = calloc(1024, sizeof(char));
+    gethostname(hostname, 1024);
+    meta_printf("hostname:%s\n", hostname);
+    free(hostname);
+}
+
+static void
 final_stats(struct rusage *rus)
 {
   total_ms = get_run_time_ms(rus);
@@ -147,7 +156,7 @@ final_stats(struct rusage *rus)
   meta_printf("max-rss:%ld\n", rus->ru_maxrss);
   meta_printf("csw-voluntary:%ld\n", rus->ru_nvcsw);
   meta_printf("csw-forced:%ld\n", rus->ru_nivcsw);
-
+  hostname_info();
   cg_stats();
 }
 
