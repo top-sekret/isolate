@@ -779,6 +779,9 @@ box_keeper(void)
 	err("TO: Time limit exceeded (wall clock)");
       if (instr_limit && perf_counter > instr_limit)
         err("TO: Time limit exceeded (instruction count)");
+      if (rus.ru_maxrss/1024 > memory_limit)
+        err("ME: Memory limit exceeded");
+
 
       if (WIFEXITED(stat))
 	{
@@ -920,7 +923,7 @@ setup_rlimits(void)
 #define RLIM(res, val) setup_rlim("RLIMIT_" #res, RLIMIT_##res, val)
 
   if (memory_limit)
-    RLIM(AS, (rlim_t)memory_limit * 1024);
+    RLIM(AS, (rlim_t)memory_limit * 1024 * 2);
 
   if (fsize_limit)
     RLIM(FSIZE, (rlim_t)fsize_limit * 1024);
