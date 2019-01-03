@@ -618,7 +618,7 @@ box_keeper(void)
 	err("TO: Time limit exceeded (wall clock)");
       if (instr_limit && perf_counter > instr_limit)
         err("TO: Time limit exceeded (instruction count)");
-      if (rus.ru_maxrss/1024 > memory_limit)
+      if (rus.ru_maxrss > memory_limit)
         err("ME: Memory limit exceeded");
 
 
