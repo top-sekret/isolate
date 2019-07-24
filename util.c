@@ -210,7 +210,7 @@ rmtree_helper(const char *fpath, const struct stat *sb, int typeflag UNUSED, str
 int
 rmtree(char *path)
 {
-  return nftw(path, rmtree_helper, 32, FTW_MOUNT | FTW_PHYS | FTW_DEPTH);
+  return nftw(path, rmtree_helper, 32, FTW_PHYS | FTW_DEPTH);
 }
 
 static void
