@@ -868,7 +868,7 @@ static void
 init(void)
 {
   msg("Preparing sandbox directory\n");
-  if (mkdir("box", 0700) < 0)
+  if (mkdir("box", 0500) < 0)
     {
       if (errno == EEXIST)
         die("Box already exists, run `%s --cleanup' first", self_name());
