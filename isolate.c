@@ -1093,19 +1093,14 @@ do_cleanup(void)
 static void
 init(void)
 {
-  if (cf_restricted_init && !invoked_by_root)
-    die("New sandboxes can be created only by root");
-
-  lock_box(true);
-
-  do_cleanup();
-
-  msg("Preparing sandbox\n");
-  make_dir(box_dir);
-  if (chdir(box_dir) < 0)
-    die("chdir(%s): %m", box_dir);
-  if (mkdir("box", 0700) < 0)
-    die("Cannot create box: %m");
+  msg("Preparing sandbox directory\n");
+  if (mkdir("box", 0500) < 0)
+    {
+      if (errno == EEXIST)
+        die("Box already exists, run `%s --cleanup' first", self_name());
+      else
+        die("Cannot create box: %m");
+    }
   if (chown("box", orig_uid, orig_gid) < 0)
     die("Cannot chown box: %m");
 
