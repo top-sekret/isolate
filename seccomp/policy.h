@@ -78,6 +78,11 @@ int seccomp_allow[] = {
   SCMP_SYS(unlinkat),
   SCMP_SYS(mkdir),
   SCMP_SYS(symlink),
+  SCMP_SYS(fork),
+  SCMP_SYS(clone),
+  SCMP_SYS(waitpid),
+  SCMP_SYS(waitid),
+  SCMP_SYS(wait4)
 };
 
 #endif //ISOLATE_POLICY_H
