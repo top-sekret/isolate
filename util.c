@@ -90,7 +90,7 @@ rmtree_helper(const char *fpath, const struct stat *sb, int typeflag UNUSED, str
 int
 rmtree(char *path)
 {
-  return nftw(path, rmtree_helper, 32, FTW_MOUNT | FTW_PHYS | FTW_DEPTH);
+  return nftw(path, rmtree_helper, 32, FTW_PHYS | FTW_DEPTH);
 }
 
 static uid_t chown_uid;
@@ -110,7 +110,7 @@ chowntree(char *path, uid_t uid, gid_t gid)
 {
   chown_uid = uid;
   chown_gid = gid;
-  nftw(path, chowntree_helper, 32, FTW_MOUNT | FTW_PHYS);
+  nftw(path, chowntree_helper, 32, FTW_PHYS);
 }
 
 static int fd_to_keep = -1;

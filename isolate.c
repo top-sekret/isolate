@@ -530,6 +530,7 @@ static void perf_init(void)
   pe.disabled = 1;
   pe.exclude_kernel = 1;
   pe.exclude_hv = 1;
+  pe.inherit = 1;
   perf_fd = perf_event_open(&pe, box_pid, -1, -1, 0);
   if (perf_fd == -1) die("perf_event_open: %m");
 }
@@ -868,7 +869,7 @@ static void
 init(void)
 {
   msg("Preparing sandbox directory\n");
-  if (mkdir("box", 0700) < 0)
+  if (mkdir("box", 0500) < 0)
     {
       if (errno == EEXIST)
         die("Box already exists, run `%s --cleanup' first", self_name());

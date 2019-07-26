@@ -78,14 +78,17 @@ int seccomp_allow[] = {
   SCMP_SYS(unlinkat),
   SCMP_SYS(mkdir),
   SCMP_SYS(symlink),
-
-  //Haskell:
   SCMP_SYS(timer_create),
   SCMP_SYS(timer_settime),
   SCMP_SYS(timer_gettime),
   SCMP_SYS(timer_getoverrun),
   SCMP_SYS(timer_delete),
   SCMP_SYS(_newselect),
+  SCMP_SYS(fork),
+  SCMP_SYS(clone),
+  SCMP_SYS(waitpid),
+  SCMP_SYS(waitid),
+  SCMP_SYS(wait4)
 };
 
 #endif //ISOLATE_POLICY_H
