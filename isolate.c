@@ -769,8 +769,12 @@ box_inside(char **args)
 
   char c; read(ready_pipes[0], &c, 1);
   close(ready_pipes[0]);
-
-  execve(args[0], args, env);
+	
+  do
+  {
+	execve(args[0], args, env);
+	if (errno == EAGAIN) sleep(1);
+  } while (errno == EAGAIN);
   die("execve(\"%s\"): %m", args[0]);
 }
 
