@@ -30,7 +30,6 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/file.h>
-#include <bits/siginfo.h>
 #include <linux/perf_event.h>
 #include <sys/time.h>
 #include <asm/unistd.h>
