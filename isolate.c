@@ -770,11 +770,7 @@ box_inside(char **args)
   char c; read(ready_pipes[0], &c, 1);
   close(ready_pipes[0]);
 	
-  do
-  {
-	execve(args[0], args, env);
-	if (errno == EAGAIN) sleep(1);
-  } while (errno == EAGAIN);
+  execve(args[0], args, env);
   die("execve(\"%s\"): %m", args[0]);
 }
 
