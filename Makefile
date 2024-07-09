@@ -13,8 +13,8 @@ YEAR=2024
 BUILD_DATE:=$(shell date '+%Y-%m-%d')
 BUILD_COMMIT:=$(shell if git rev-parse >/dev/null 2>/dev/null ; then git describe --always --tags ; else echo '<unknown>' ; fi)
 
-PREFIX = /usr/local
-VARPREFIX = /var/local
+PREFIX = $(DESTDIR)/opt/isolate
+VARPREFIX = $(PREFIX)/var
 CONFIGDIR = $(PREFIX)/etc
 CONFIG = $(CONFIGDIR)/isolate
 BINDIR = $(PREFIX)/bin
@@ -37,7 +37,7 @@ isolate-cg-keeper: isolate-cg-keeper.o config.o util.o
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 isolate.o: CFLAGS += -DVERSION='"$(VERSION)"' -DYEAR='"$(YEAR)"' -DBUILD_DATE='"$(BUILD_DATE)"' -DBUILD_COMMIT='"$(BUILD_COMMIT)"'
-config.o: CFLAGS += -DCONFIG_FILE='"$(CONFIG)"'
+config.o: CFLAGS += -DCONFIG_FILE='"/home/oioioiworker/isolate.cf"'
 isolate-cg-keeper.o: CFLAGS += $(SYSTEMD_CFLAGS)
 
 isolate.1: isolate.1.txt
