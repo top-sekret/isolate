@@ -13,7 +13,7 @@ lock_root = /home/oioioiworker/isolate
 # the path from "file", where it is put by isolate-cg-helper.
 # cg_root = /sys/fs/cgroup/isolate.slice/isolate.service
 #cg_root = auto:/run/isolate/cgroup
-ch_root = /sys/fs/cgroup
+cg_root = /sys/fs/cgroup
 
 # Block of UIDs and GIDs reserved for sandboxes
 first_uid = 60000
