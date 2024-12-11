@@ -184,6 +184,7 @@ lock_box(bool is_init)
   int name_len = snprintf(lock_name, sizeof(lock_name), "%s/%d", cf_lock_root, box_id);
   assert(name_len < (int) sizeof(lock_name));
 
+  msg("Locking %s", lock_name);
   lock_fd = open(lock_name, O_RDWR | (is_init ? O_CREAT : 0), 0666);
   if (lock_fd < 0)
     {
@@ -443,7 +444,7 @@ msg(char *msg, ...)
 {
   va_list args;
   va_start(args, msg);
-  if (verbose)
+  if (verbose || 1)
     {
       int len = strlen(msg);
       if (len > 0)
