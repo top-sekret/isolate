@@ -220,7 +220,7 @@ lock_box(bool is_init)
       lock.owner_uid = orig_uid;
       lock.cg_enabled = cg_enable;
       lock.is_initialized = 0;
-      // lock_write();
+      lock_write();
       return true;
     }
   else
@@ -996,7 +996,7 @@ box_proxy(void *arg)
   close(error_pipes[0]);
   close(status_pipes[0]);
   meta_close();
-  // lock_close();
+  lock_close();
   reset_signals();
 
   pid_t inside_pid = fork();
@@ -1112,7 +1112,7 @@ init(void)
   set_quota();
 
   lock.is_initialized = 1;
-  // lock_write();
+  lock_write();
 
   puts(box_dir);
 }
@@ -1132,7 +1132,7 @@ cleanup(void)
     {
       msg("Deleting sandbox\n");
       do_cleanup();
-      // lock_remove();
+      lock_remove();
     }
 
   msg("Deleting sandbox directory\n");
