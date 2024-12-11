@@ -6,13 +6,14 @@
 box_root = /opt/isolate/var/lib/isolate
 
 # Directory where lock files are created.
-lock_root = /run/isolate/locks
+lock_root = /home/oioioiworker/isolate
 
 # Control group under which we place our subgroups
 # Either an explicit path to a subdirectory in cgroupfs, or "auto:file" to read
 # the path from "file", where it is put by isolate-cg-helper.
 # cg_root = /sys/fs/cgroup/isolate.slice/isolate.service
-cg_root = auto:/run/isolate/cgroup
+#cg_root = auto:/run/isolate/cgroup
+ch_root = /sys/fs/cgroup
 
 # Block of UIDs and GIDs reserved for sandboxes
 first_uid = 60000
