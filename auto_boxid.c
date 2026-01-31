@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <time.h>
 
 enum lock_status {LOCK_NONE, LOCK_FREE, LOCK_LOCKED, LOCK_ZOMBIE};
 
